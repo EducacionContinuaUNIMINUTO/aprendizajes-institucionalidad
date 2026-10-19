@@ -44,6 +44,9 @@ body{margin:0;font-family:var(--font-body);color:var(--ink);background:var(--bg)
 .hbadges{display:flex;gap:8px;flex-wrap:wrap;}
 .hbadge{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);padding:5px 12px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
 .tabs{display:flex;gap:2px;padding:0 28px;background:var(--card);border-bottom:1px solid var(--border);overflow-x:auto;}
+.backbtn{align-self:center;margin-right:10px;background:var(--chip-bg);color:var(--chip-ink);border:1px solid transparent;border-radius:8px;padding:6px 12px;font:700 12px var(--font-body);cursor:pointer;white-space:nowrap;}
+.backbtn:hover:not(:disabled){border-color:var(--teal);}
+.backbtn:disabled{opacity:.4;cursor:default;}
 .tab{background:none;border:none;border-bottom:3px solid transparent;padding:12px 16px 10px;font:600 13px var(--font-body);color:var(--ink-2);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:7px;}
 .tab:hover{color:var(--ink);}
 .tab.active{color:var(--navy);border-bottom-color:var(--teal);}
@@ -174,6 +177,7 @@ tr.oi-row.expanded td{background:var(--row-open);}
   </div>
 </div>
 <nav class="tabs" role="tablist">
+  <button class="backbtn" id="backBtn" title="Volver al paso anterior" disabled>← Atrás</button>
   <button class="tab active" data-pane="buscar">Buscador</button>
   <button class="tab" data-pane="resumen">Resumen</button>
   <button class="tab" data-pane="orgv">Organización de ventas</button>
@@ -438,9 +442,9 @@ document.getElementById('tbody').addEventListener('click', e=>{
   const j = e.target.closest('[data-jump]');
   if(j){ e.stopPropagation(); const o=+j.dataset.jump; state.q=String(o); document.getElementById('q').value=o; expanded=o; update(); return; }
   const tr = e.target.closest('tr.oi-row'); if(!tr) return;
-  const o=+tr.dataset.o; expanded = expanded===o?null:o; renderTable(filtered());
+  const o=+tr.dataset.o; expanded = expanded===o?null:o; renderTable(filtered()); recordNav();
 });
-document.querySelectorAll('th[data-key]').forEach(th=>th.onclick=()=>{ const k=+th.dataset.key; if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=1;} renderTable(filtered()); });
+document.querySelectorAll('th[data-key]').forEach(th=>th.onclick=()=>{ const k=+th.dataset.key; if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=1;} renderTable(filtered()); recordNav(); });
 
 // ---------- Resumen ----------
 const tip = document.getElementById('tip');
@@ -476,7 +480,7 @@ function renderCerts(rows){
     CERTS.filter(c=>c.tanda===tn).map(c=>{ const L=by[c.id]; const last=L.map(r=>r[1]).sort().at(-1);
       const nr=new Set(L.map(r=>r[3])).size;
       return `<div class="card ccard${certSel===c.id?' active':''}${L.length?'':' zero'}" data-cert="${c.id}"><span class="cn">${c.id}.</span><span class="ct">${esc(c.nombre)}</span>${c.prov?`<span class="prov">${esc(c.prov)}</span>`:''}<span class="cv">${nf(L.length)} <span style="font-size:11px;font-weight:600;color:var(--ink-2)">OI</span></span><span class="cs">${L.length?`Última: ${fmtDate(last)} · ${nr} rectoría${nr===1?'':'s'}`:'Sin OI en la selección'}</span>${c.precioFijo?`<span class="cs"><b style="color:var(--ink)">${fmtMoney(c.precioFijo)}</b> ${esc(c.nota||'')}</span>`:''}${c.refBog&&!c.precioFijo?`<span class="cs"><b style="color:var(--ink)">${fmtMoney(c.refBog.precio)}</b> Bogotá y Cundinamarca</span>`:''}</div>`; }).join('')+`</div></div>`).join('');
-  document.querySelectorAll('[data-cert]').forEach(c=>c.onclick=()=>{ certSel=+c.dataset.cert; renderCerts(filtered()); });
+  document.querySelectorAll('[data-cert]').forEach(c=>c.onclick=()=>{ certSel=+c.dataset.cert; update(); });
   const c = CERTS.find(x=>x.id===certSel); const L = by[certSel].slice().sort((a,b)=>b[1].localeCompare(a[1]));
   const precio = r => { const p=precioOI(r); if(!p) return '—'; return fmtMoney(p.v)+(p.fijo?' <span class="chip">campaña</span>':'')+(p.ref?` <span class="chip" title="Valor de Bogotá (${esc(p.ref.soi)})">= Bogotá</span>`:''); };
   document.getElementById('certDetail').innerHTML = `<div class="wh" style="padding:14px 16px 0"><h3>${c.id}. ${esc(c.nombre)}</h3><span class="hint">${nf(L.length)} OI${c.prov?' · '+esc(c.prov):''}${c.precioFijo?` · ${esc(c.nota||'')}: <b>${fmtMoney(c.precioFijo)}</b>`:''}${c.refBog&&!c.precioFijo?` · Valor Bogotá = Cundinamarca: <b>${fmtMoney(c.refBog.precio)}</b> (${esc(c.refBog.soi)}, ${c.refBog.horas??'—'} h ${esc(c.refBog.modalidad||'')})`:''}</span></div>
@@ -560,13 +564,50 @@ function update(){
   if(activePane==='resumen') renderResumen(rows);
   if(activePane==='orgv') renderOrg(rows);
   if(activePane==='certs') renderCerts(rows);
+  recordNav();
 }
+// ---------- Historial de navegación (botón Atrás + atrás del navegador) ----------
+const navStack = []; let restoring = false, histOK = true, lastWasSearch = false;
+const snap = () => ({s:{...state}, pane:activePane, exp:expanded, cert:certSel, sk:sortKey, sd:sortDir});
+const sameNav = (a,b) => JSON.stringify(a)===JSON.stringify(b);
+function recordNav(){
+  if(restoring) return;
+  const cur = snap(), last = navStack[navStack.length-1];
+  if(last && sameNav(last,cur)) return;
+  const onlySearch = last && last.s.q!==cur.s.q && sameNav({...last,s:{...last.s,q:''}},{...cur,s:{...cur.s,q:''}});
+  if(onlySearch && lastWasSearch && navStack.length>1){ navStack[navStack.length-1]=cur; try{ history.replaceState({nav:navStack.length-1},''); }catch(e){} }
+  else { navStack.push(cur); try{ history.pushState({nav:navStack.length-1},''); }catch(e){ histOK=false; } }
+  lastWasSearch = !!onlySearch;
+  updBack();
+}
+function applyNav(sn){
+  restoring = true;
+  Object.assign(state, sn.s); document.getElementById('q').value = sn.s.q||'';
+  activePane = sn.pane; expanded = sn.exp; certSel = sn.cert; sortKey = sn.sk; sortDir = sn.sd;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.pane===activePane));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id==='pane-'+activePane));
+  update(); hideTip && hideTip();
+  restoring = false; lastWasSearch = false; updBack();
+}
+function updBack(){ document.getElementById('backBtn').disabled = navStack.length<=1; }
+function goBack(){
+  if(navStack.length<=1) return;
+  if(histOK){ history.back(); }
+  else { navStack.pop(); applyNav(navStack[navStack.length-1]); }
+}
+window.addEventListener('popstate', e=>{
+  const i = e.state && typeof e.state.nav==='number' ? e.state.nav : 0;
+  if(i < navStack.length-1 || (i===0)){ navStack.length = Math.max(1, i+1); applyNav(navStack[navStack.length-1]); }
+});
+document.getElementById('backBtn').onclick = goBack;
 const years = RECORDS.map(r=>r[1]).filter(Boolean).sort();
 document.getElementById('badgeTotal').textContent = `${nf(RECORDS.length)} OI · ${years[0].slice(0,4)}–${years.at(-1).slice(0,4)}`;
 document.getElementById('badgeCorte').textContent = `Corte: ${fmtDate(META.corte)}`;
 document.getElementById('footSrc').innerHTML = `Fuentes: matriz <b>OI_1_3</b> (${nf(META.nMatriz)} OI, ${META.desde.slice(0,4)}–${META.corte.slice(0,4)}) + ${nf(META.nAnterior)} OI que solo estaban en la BDD anterior del buscador, cruzadas con ${nf(Object.keys(SOL).length)} solicitudes de orden interna de Softexpert (2024 – abr. 2025). La rectoría se asigna por centro de operación según la clasificación de la BDD anterior.`;
 buildFilters();
-update();
+restoring = true; update(); restoring = false;
+navStack.push(snap()); try{ history.replaceState({nav:0},''); }catch(e){ histOK=false; }
+updBack();
 </script>
 </body>
 </html>
