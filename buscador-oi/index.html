@@ -159,7 +159,6 @@ tr.oi-row.expanded td{background:var(--row-open);}
 <nav class="tabs" role="tablist">
   <button class="tab active" data-pane="buscar">Buscador</button>
   <button class="tab" data-pane="resumen">Resumen</button>
-  <button class="tab" data-pane="calidad">Calidad de datos <span class="n" id="qTabN">0</span></button>
 </nav>
 <div class="content">
   <div class="card filters">
@@ -214,11 +213,6 @@ tr.oi-row.expanded td{background:var(--row-open);}
     </div>
   </section>
 
-  <section class="pane" id="pane-calidad">
-    <div class="qgrid" id="qgrid"></div>
-    <div class="card"><div class="table-scroll" style="max-height:56vh"><table class="qtable"><thead id="qhead"></thead><tbody id="qbody"></tbody></table></div></div>
-    <div class="foot">Las alertas se calculan sobre la selección de filtros actual. Revisarlas en SAP / Softexpert antes de corregir: aquí solo se señalan.</div>
-  </section>
 
   <div class="foot" id="footSrc"></div>
 </div>
@@ -347,9 +341,9 @@ function renderTable(rows){
   rows.slice(0,500).forEach(r=>{
     const o=r[0], flags=QFLAGS.get(r);
     html += `<tr class="oi-row${expanded===o?' expanded':''}" data-o="${o}">
-      <td><b>${o}</b>${r[14]?' <span class="chip ghost" title="Solo en la BDD anterior">ant.</span>':''}</td>
+      <td><b>${o}</b></td>
       <td style="white-space:nowrap">${fmtDate(r[1])}</td>
-      <td>${esc(r[2])||'—'}${flags&&flags.some(f=>f!=='sindet'&&f!=='anterior')?' <span class="chip warn" title="Tiene alertas de calidad">⚠</span>':''}</td>
+      <td>${esc(r[2])||'—'}</td>
       <td>${esc(dv('rect',r[3]))||'—'}</td>
       <td class="hide-sm">${esc(dv('centro',r[5]))||'—'}</td>
       <td class="hide-sm">${esc(dv('clase',r[7]))||'—'}</td>
@@ -366,15 +360,14 @@ function detailRow(r){
     ${item('Sede (SAP)',esc(dv('sede',r[4])))}${item('Centro de beneficio',esc(r[12]))}${item('Segmento',esc(r[6]))}${item('Clase de orden',esc(dv('clase',r[7])))}
     ${item('Material',esc(dv('material',r[10])))}${item('Sigla Banner',esc(r[8]))}${item('Grupo vendedores',esc(r[9]))}${item('Área jerárquica',esc(dv('areaJer',r[13])))}</div>`;
   const flags = QFLAGS.get(r)||[];
-  if(flags.length) h += `<div class="dsec">Alertas</div><div class="siblings">${flags.map(f=>`<span class="chip warn">${QRULES.find(q=>q.id===f).t}</span>`).join('')}</div>`;
   if(r[11]){
     const s=SOL[r[11]];
     h += `<div class="dsec">Solicitud ${esc(r[11])} (Softexpert)</div>`;
     if(s){
       h += `<div class="dgrid">${'solicitante' in s?item('Solicitante',esc(s.solicitante))+item('Cargo',esc(s.cargo))+item('Correo',esc(s.correo)):''}${item('Fecha solicitud',fmtDate(s.fSolicitud))}
       ${item('Oferta',esc(s.oferta))}${item('Modalidad',esc(s.modalidad))}${item('Total horas',s.horas??'—')}${item('Tipo creación',esc((s.tipoCreacion||'').replace(/_/g,' ')))}
-      ${item('Opción',esc(s.opcion))}${item('Fecha inicio',fmtDate(s.fInicio))}${item('Fecha fin',fmtDate(s.fFin)+(SOI_FECHAS.has(r[11])?' <span class="chip warn">fin &lt; inicio</span>':''))}${item('Periodo',esc(s.periodo))}
-      ${item('Inicio facturación',fmtDate(s.fInicioFact))}${item('Fin facturación',fmtDate(s.fFinFact)+(SOI_FACT.has(r[11])?' <span class="chip warn">fin &lt; inicio</span>':''))}${item('Grupo vendedor',esc(s.grupoVendedor))}${item('Precio aprobado',fmtMoney(s.precio))}</div>`;
+      ${item('Opción',esc(s.opcion))}${item('Fecha inicio',fmtDate(s.fInicio))}${item('Fecha fin',fmtDate(s.fFin))}${item('Periodo',esc(s.periodo))}
+      ${item('Inicio facturación',fmtDate(s.fInicioFact))}${item('Fin facturación',fmtDate(s.fFinFact))}${item('Grupo vendedor',esc(s.grupoVendedor))}${item('Precio aprobado',fmtMoney(s.precio))}</div>`;
     } else {
       h += `<div class="note">La matriz registra la SOI, pero el detalle de esta solicitud (solicitante, fechas, precio) aún no está cargado. El buscador tiene detalle de ${nf(Object.keys(SOL).length)} solicitudes (2024 – abr. 2025).</div>`;
     }
@@ -464,10 +457,10 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
 function exportCsv(){
   const rows = filtered();
   const q = s => `"${String(s??'').replace(/"/g,'""')}"`;
-  const head = ['Orden','Fecha','Texto breve','Rectoría','Sede SAP','Centro operación','Segmento','Clase','Centro beneficio','Sigla Banner','Grupo vendedores','Material','SOI','Oferta (SOI)','Solicitante','Modalidad','Horas','Fecha inicio','Fecha fin','Precio aprobado','Alertas'];
+  const head = ['Orden','Fecha','Texto breve','Rectoría','Sede SAP','Centro operación','Segmento','Clase','Centro beneficio','Sigla Banner','Grupo vendedores','Material','SOI','Oferta (SOI)','Solicitante','Modalidad','Horas','Fecha inicio','Fecha fin','Precio aprobado'];
   let csv = '﻿'+head.join(';')+'\n';
   rows.forEach(r=>{ const s=r[11]&&SOL[r[11]]||{};
-    csv += [r[0],r[1],q(r[2]),q(dv('rect',r[3])),q(dv('sede',r[4])),q(dv('centro',r[5])),r[6],dv('clase',r[7]),r[12],q(r[8]),q(r[9]),q(dv('material',r[10])),r[11]||'',q(s.oferta),q(s.solicitante),q(s.modalidad),s.horas??'',s.fInicio||'',s.fFin||'',s.precio??'',q((QFLAGS.get(r)||[]).map(f=>QRULES.find(x=>x.id===f).t).join(' | '))].join(';')+'\n'; });
+    csv += [r[0],r[1],q(r[2]),q(dv('rect',r[3])),q(dv('sede',r[4])),q(dv('centro',r[5])),r[6],dv('clase',r[7]),r[12],q(r[8]),q(r[9]),q(dv('material',r[10])),r[11]||'',q(s.oferta),q(s.solicitante),q(s.modalidad),s.horas??'',s.fInicio||'',s.fFin||'',s.precio??''].join(';')+'\n'; });
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download='ordenes_internas_educon.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 document.getElementById('exportBtn').onclick=exportCsv;
@@ -478,7 +471,6 @@ function update(){
   renderKpis(rows);
   if(activePane==='buscar') renderTable(rows);
   if(activePane==='resumen') renderResumen(rows);
-  renderCalidad(rows);
 }
 const years = RECORDS.map(r=>r[1]).filter(Boolean).sort();
 document.getElementById('badgeTotal').textContent = `${nf(RECORDS.length)} OI · ${years[0].slice(0,4)}–${years.at(-1).slice(0,4)}`;
